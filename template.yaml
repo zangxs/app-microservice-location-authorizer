@@ -1,0 +1,68 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Lambda Authorizer for API Gateway HTTP API — JWT validation (HS256)
+
+Parameters:
+  JwtSecret:
+    Type: String
+    NoEcho: true
+    Description: JWT Secret Key (Base64 encoded) — must match the backend JWT_KEY
+
+Resources:
+  JwtAuthorizerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: .
+      Handler: com.brayanpv.authorizer.JwtAuthorizerHandler::handleRequest
+      Runtime: java17
+      MemorySize: 256
+      Timeout: 10
+      Architectures:
+        - x86_64
+      Environment:
+        Variables:
+          JWT_SECRET: !Ref JwtSecret
+      Events:
+        Authorizer:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Method: "*"
+            Path: "/{proxy+}"  # Captura todas las rutas
+
+  HttpApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      StageName: prod
+      Auth:
+        DefaultAuthorizer: JwtAuthorizer
+        Authorizers:
+          JwtAuthorizer:
+            FunctionArn: !GetAtt JwtAuthorizerFunction.Arn
+            Identity:
+              Headers:
+                - Authorization
+            # Enable simple response (IAM policy format)
+            AuthorizerPayloadFormatVersion: "2.0"
+            EnableSimpleResponses: false
+      # Opcional: Configuración CORS si lo necesitas
+      CorsConfiguration:
+        AllowOrigins:
+          - "*"
+        AllowHeaders:
+          - "authorization"
+          - "content-type"
+        AllowMethods:
+          - "GET"
+          - "POST"
+          - "PUT"
+          - "DELETE"
+          - "OPTIONS"
+
+Outputs:
+  ApiUrl:
+    Description: API Gateway HTTP API endpoint
+    Value: !Sub "https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com/prod"
+  AuthorizerFunctionArn:
+    Description: Lambda Authorizer function ARN
+    Value: !GetAtt JwtAuthorizerFunction.Arn
